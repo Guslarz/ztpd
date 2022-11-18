@@ -38,3 +38,108 @@ ksztalt,
 SDO_GEOMETRY(
 2001,null,SDO_POINT_TYPE(3,3,null),null,null), 
 'mask=ANYINTERACT') = 'TRUE';
+
+
+-- 2
+-- A
+SELECT A.CITY_NAME AS miasto, 
+SDO_NN_DISTANCE(1) as odl
+FROM MAJOR_CITIES A
+WHERE SDO_NN(
+    GEOM,
+    (
+        SELECT M.GEOM
+        FROM MAJOR_CITIES M
+        WHERE CITY_NAME='Warsaw'
+    ),
+    'sdo_num_res=10 unit=km',1
+) = 'TRUE' AND A.CITY_NAME != 'Warsaw';
+
+
+-- B
+SELECT city_name AS miasto
+FROM major_cities
+WHERE SDO_WITHIN_DISTANCE(
+    geom, 
+    (
+        SELECT GEOM
+        FROM MAJOR_CITIES
+        WHERE CITY_NAME='Warsaw'
+    ),
+    'distance=100 unit=km'
+) = 'TRUE' AND city_name != 'Warsaw';
+
+
+-- C
+select B.CNTRY_NAME AS kraj, c.city_name AS miasto
+from COUNTRY_BOUNDARIES B, MAJOR_CITIES C
+where SDO_RELATE(C.GEOM, B.GEOM,
+ 'mask=INSIDE') = 'TRUE'
+ AND b.cntry_name = 'Slovakia';
+ 
+ 
+-- D
+SELECT b.cntry_name as kraj, SDO_GEOM.SDO_DISTANCE(a.geom, b.geom, 1, 'unit=km')
+FROM COUNTRY_BOUNDARIES A, COUNTRY_BOUNDARIES B
+WHERE a.cntry_name = 'Poland' AND
+    SDO_RELATE(a.geom, b.geom, 'mask=touch') != 'TRUE' AND
+    b.cntry_name != 'Poland';
+    
+    
+-- 3
+-- A
+SELECT b.cntry_name, SDO_GEOM.SDO_LENGTH(SDO_GEOM.SDO_INTERSECTION(a.geom, b.geom, 1), 1, 'unit=km') AS odleglosc
+FROM COUNTRY_BOUNDARIES A, COUNTRY_BOUNDARIES B
+WHERE a.cntry_name = 'Poland' AND
+    SDO_RELATE(a.geom, b.geom, 'mask=touch') = 'TRUE';
+    
+    
+-- B
+SELECT * FROM (
+    SELECT cntry_name
+    FROM country_boundaries
+    ORDER BY SDO_GEOM.SDO_AREA(geom, 1, 'unit=SQ_KM') DESC
+)
+WHERE ROWNUM = 1;
+
+
+-- C
+SELECT SDO_GEOM.SDO_AREA(
+SDO_AGGR_MBR(geom))
+FROM major_cities
+WHERE city_name IN ('Warsaw', 'Łódź');
+
+
+-- D
+SELECT SDO_GEOM.SDO_UNION(
+(
+    SELECT geom
+    FROM country_boundaries
+    WHERE cntry_name = 'Poland'
+), (
+    SELECT geom
+    FROM major_cities
+    WHERE city_name = 'Prague'
+)).GET_GTYPE()
+FROM dual;
+
+
+-- E
+SELECT * FROM (
+    SELECT a.city_name, cntry_name
+    FROM major_cities A 
+        JOIN country_boundaries B USING(cntry_name)
+    ORDER BY SDO_GEOM.SDO_DISTANCE(
+        a.geom,
+        SDO_GEOM.SDO_CENTROID(b.geom),
+        1
+    )
+)
+WHERE rownum = 1;
+
+
+-- F
+SELECT name, SDO_GEOM.SDO_LENGTH(SDO_GEOM.SDO_INTERSECTION(a.geom, b.geom, 1), 1, 'unit=km') AS dlugosc
+FROM country_boundaries a, rivers b
+WHERE a.cntry_name = 'Poland' AND
+    SDO_RELATE(a.geom, b.geom, 'mask=OVERLAPBDYINTERSECT') = 'TRUE';
