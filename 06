@@ -1,0 +1,165 @@
+-- 1
+--- A
+select lpad('-',2*(level-1),'|-') || t.owner||'.'||t.type_name||' (FINAL:'||t.final||
+', INSTANTIABLE:'||t.instantiable||', ATTRIBUTES:'||t.attributes||', METHODS:'||t.methods||')'
+from all_types t
+start with t.type_name = 'ST_GEOMETRY'
+connect by prior t.type_name = t.supertype_name
+ and prior t.owner = t.owner;
+ 
+ 
+--- B
+select distinct m.method_name
+from all_type_methods m
+where m.type_name like 'ST_POLYGON'
+and m.owner = 'MDSYS'
+order by 1;
+
+
+--- C
+CREATE TABLE myst_major_cities (
+    fips_cntry VARCHAR2(2),
+    city_name VARCHAR2(40),
+    stgeom ST_POINT
+);
+
+
+--- D
+INSERT INTO myst_major_cities
+SELECT 
+    fips_cntry, 
+    city_name, 
+    TREAT(ST_POINT.FROM_SDO_GEOM(GEOM) AS ST_POINT) stgeom
+FROM major_cities;
+
+
+-- 2
+--- A
+INSERT INTO myst_major_cities 
+VALUES(
+    'PL',
+    'Szczyrk',
+    TREAT(ST_POINT.FROM_WKT('POINT(19.036107 49.718655)') AS ST_POINT)
+);
+
+
+--- B
+SELECT name, r.geom.get_wkt()
+FROM rivers r;
+
+
+--- C
+SELECT SDO_UTIL.TO_GMLGEOMETRY(c.stgeom.GET_SDO_GEOM())
+FROM myst_major_cities c
+WHERE city_name = 'Szczyrk';
+
+
+SELECT SDO_UTIL.TO_GMLGEOMETRY(b.stgeom.GET_SDO_GEOM())
+FROM myst_country_boundaries b;
+
+
+-- 3
+--- A
+CREATE TABLE MYST_COUNTRY_BOUNDARIES (
+    fips_cntry VARCHAR2(2),
+    cntry_name VARCHAR2(40),
+    stgeom ST_MULTIPOLYGON
+);
+
+
+--- B
+INSERT INTO myst_country_boundaries
+SELECT 
+    fips_cntry,
+    cntry_name,
+    ST_MULTIPOLYGON(GEOM) 
+FROM COUNTRY_BOUNDARIES;
+
+
+--- C
+SELECT b.stgeom.ST_GEOMETRYTYPE(), COUNT(*)
+FROM myst_country_boundaries b
+GROUP BY b.stgeom.ST_GEOMETRYTYPE();
+
+
+--- D
+SELECT b.stgeom.ST_ISSIMPLE()
+FROM myst_country_boundaries b;
+
+
+-- 4
+--- A
+SELECT b.cntry_name, COUNT(*)
+FROM myst_country_boundaries b, myst_major_cities c
+WHERE b.stgeom.ST_Contains(c.stgeom) = 1
+    AND city_name != 'Szczyrk' -- bo inny układ
+GROUP BY cntry_name;
+
+
+--- B
+SELECT b1.cntry_name a_name, b2.cntry_name b_name
+FROM myst_country_boundaries b1, myst_country_boundaries b2
+WHERE b1.stgeom.st_touches(b2.stgeom) = 1
+    AND b2.cntry_name = 'Czech Republic';
+    
+    
+--- C
+select distinct B.CNTRY_NAME, R.name
+from MYST_COUNTRY_BOUNDARIES B, RIVERS R
+where B.CNTRY_NAME = 'Czech Republic'
+and ST_LINESTRING(R.GEOM).ST_INTERSECTS(B.STGEOM) = 1;
+
+    
+--- D
+SELECT b1.stgeom.st_union(b2.stgeom) powierzchnia
+FROM myst_country_boundaries b1, myst_country_boundaries b2
+WHERE b1.cntry_name = 'Slovakia'
+    AND b2.cntry_name = 'Czech Republic';
+    
+    
+--- E
+select TREAT(B.STGEOM.ST_DIFFERENCE(ST_GEOMETRY(W.GEOM)) as ST_POLYGON).ST_AREA() obiekt,
+ B.STGEOM.ST_DIFFERENCE(ST_GEOMETRY(W.GEOM)).ST_GEOMETRYTYPE() wegry_bez
+from MYST_COUNTRY_BOUNDARIES B, WATER_BODIES W
+where B.CNTRY_NAME = 'Hungary'
+and W.name = 'Balaton';
+    
+
+-- 5
+--- A
+select count(*)
+from MYST_COUNTRY_BOUNDARIES B, MYST_MAJOR_CITIES C
+where SDO_WITHIN_DISTANCE(C.STGEOM, B.STGEOM,
+ 'distance=100 unit=km') = 'TRUE'
+and B.CNTRY_NAME = 'Poland'
+group by B.CNTRY_NAME;
+
+EXPLAIN PLAN FOR
+select count(*)
+from MYST_COUNTRY_BOUNDARIES B, MYST_MAJOR_CITIES C
+where SDO_WITHIN_DISTANCE(C.STGEOM, B.STGEOM,
+ 'distance=100 unit=km') = 'TRUE'
+and B.CNTRY_NAME = 'Poland'
+group by B.CNTRY_NAME;
+
+select plan_table_output from table(dbms_xplan.display('plan_table',null,'basic'));
+
+
+--- B
+insert into USER_SDO_GEOM_METADATA
+ select 'MYST_MAJOR_CITIES', 'STGEOM',
+ T.DIMINFO, T.SRID
+ from USER_SDO_GEOM_METADATA T
+ where T.TABLE_NAME = 'MAJOR_CITIES';
+ 
+ SELECT distinct(table_name)
+ FROM USER_SDO_GEOM_METADATA;
+ 
+ 
+--- C
+create index MYST_MAJOR_CITIES_IDX on
+ MYST_MAJOR_CITIES(STGEOM)
+indextype IS MDSYS.SPATIAL_INDEX;
+
+
+DROP INDEX MYST_MAJOR_CITIES_IDX;
